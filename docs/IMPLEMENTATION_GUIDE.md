@@ -537,10 +537,10 @@ If you use this system in research, please cite:
 ```bibtex
 @software{street_cleanliness_2026,
     title = {Context-Aware and Spatially-Intelligent Street Cleanliness Detection System},
-    author = {Your Name},
+    author = {Kritnandan},
     year = {2026},
-    institution = {University Name},
-    course = {EE-655 Final-Year Engineering Project}
+    institution = {Open Source Initiative},
+    course = {StreetClean AI Architecture Blueprint}
 }
 ```
 

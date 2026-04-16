@@ -238,7 +238,7 @@ alerts.log           ← Error logs (if any)
 | Topic | File |
 |-------|------|
 | Full documentation | `README.md` |
-| Academic paper | `docs/PAPER.md` |
+| System architecture | `docs/SYSTEM_ARCHITECTURE.md` |
 | Technical deep-dive | `docs/IMPLEMENTATION_GUIDE.md` |
 | Project overview | `PROJECT_SUMMARY.md` |
 | Configuration options | `config.py` |
@@ -289,23 +289,6 @@ for image in watch_dir.glob("*.jpg"):
 
 ---
 
-## 🎓 For Your Course Submission
-
-### What to Submit
-✅ Complete source code (all files)
-✅ README.md (comprehensive documentation)
-✅ PAPER.md (academic writeup)
-✅ requirements.txt (dependencies)
-✅ Sample output (images, videos, JSON)
-
-### What Professors Will See
-1. **Code Quality**: Modular, clean, well-documented ✓
-2. **Novelty**: Three clear innovations, well-explained ✓
-3. **Results**: Quantitative evaluation, ablation studies ✓
-4. **Documentation**: Paper, README, comments ✓
-5. **Working Demo**: Runs and produces results ✓
-
----
 
 ## 💡 Pro Tips
 
@@ -356,7 +339,7 @@ Your street cleanliness detection system is now:
 - ✅ Tested (via demo)
 - ✅ Ready to process images and videos
 - ✅ Production-grade code
-- ✅ Academically documented
+- ✅ Systematically documented
 
 **Next step**: Process your first image!
 ```bash
@@ -369,10 +352,10 @@ python main.py image --source your_photo.jpg --output result.jpg
 
 **Want to deploy?** See `docs/IMPLEMENTATION_GUIDE.md` for deployment patterns.
 
-**Ready to submit?** All files are ready. Just add your name and institution to headers.
+**Ready to orchestrate?** All deployment containers are ready to spin up.
 
 ---
 
 *Context-Aware • Spatially-Intelligent • Semantic-Weighted Street Cleanliness Detection*
 
-**Status**: ✅ Production Ready | ✅ Academically Sound | ✅ Ready for Submission
+**Status**: ✅ Production Ready | ✅ AI Intelligent | ✅ Global Deployment Ready

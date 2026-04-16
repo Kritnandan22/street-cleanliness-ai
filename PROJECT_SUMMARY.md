@@ -29,7 +29,7 @@ street_cleanliness_system/
 ├── output/
 │   └── ... (generated)
 └── docs/
-    ├── PAPER.md
+    ├── SYSTEM_ARCHITECTURE.md
     └── IMPLEMENTATION_GUIDE.md
 ```
 
