@@ -14,6 +14,8 @@ pinned: false
 ![YOLOv8](https://img.shields.io/badge/YOLO-v8-orange)
 ![Flask](https://img.shields.io/badge/Framework-Flask-black)
 
+### 🚀 **[Try the Live Web App Here!](https://huggingface.co/spaces/Nandan22/StreatClean_AI)**
+
 ## Overview
 Traditional street cleanliness systems treat litter quantification purely as a simple object detection problem (counting bounding boxes). This naive approach fails to account for critical environmental nuances. **StreetClean AI** is an intelligent, open-source pipeline that shifts the paradigm from "how much litter is there?" to "how severe is this pollution contextually and ecologically?".
 
