@@ -539,7 +539,7 @@ If you use this system in research, please cite:
     title = {Context-Aware and Spatially-Intelligent Street Cleanliness Detection System},
     author = {Kritnandan},
     year = {2026},
-    institution = {Open Source Initiative},
+    institution = {IIT Kanpur},
     course = {StreetClean AI Architecture Blueprint}
 }
 ```
