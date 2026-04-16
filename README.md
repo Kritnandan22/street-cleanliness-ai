@@ -17,8 +17,40 @@ Our pipeline extends YOLOv8 by introducing three intelligent modules:
 2. **Ecological-Weighted Semantic Scoring**
    The neural network categorizes detections into 6 severe groups: `plastic`, `metal`, `paper`, `organic`, `glass`, and `other`. Highly toxic, non-biodegradable items (like glass and plastic) degrade the overall score exponentially faster than paper wrappers.
 
-3. **Spatial Heatmap Pollution Analysis**
-   Translates raw bounding box geometry into a 2D Gaussian density map to algorithmically detect "Hotspots". Critical deployment thresholds are triggered if localized regions exceed the density percentile, rather than relying strictly on total image count.
+## Primary Use Cases
+- **Municipal Sanitation Orchestration:** Automatically route street sweepers and cleaning crews to explicitly identified spatial Hotspots rather than deploying blind grid sweeps.
+- **Ecological Impact Tracking:** Analyze the ratio of highly-toxic non-biodegradables (plastics/glass) vs minor perishables (paper/organic) across different city sectors over time.
+- **Automated Fleet Integration:** Deploy the headless inference engine onto dashcams of municipal vehicles (e.g., mail trucks, police cars) to passively map urban pollution severities constantly.
+
+## Repository Directory Structure
+This repository follows an organized modular paradigm:
+```text
+street-cleanliness-ai/
+│
+├── app.py                      ← Main Flask routing and Web Dashboard entrypoint
+├── train.py                    ← YOLOv8 native model fine-tuning script
+├── evaluate.py                 ← Generates ablation studies on metrics (mAP, counts, contexts)
+│
+├── docs/
+│   └── SYSTEM_ARCHITECTURE.md  ← Deep-dive mathematical formulas for the cleanliness score
+│
+├── inference/
+│   └── detection_pipeline.py   ← Core module loading YOLOv8 and mapping object bounds
+│
+├── models/
+│   ├── best_yolov8_taco.pt     ← Native production detection weights
+│   └── scene_classifier.py     ← MobileNetV2 scene-context (Grass vs Road) classifier
+│
+├── utils/
+│   ├── context_aware_scorer.py ← Modifies baseline penalties based on detected scenery
+│   ├── spatial_heatmap.py      ← Generates Gaussian thermal matrices to isolate Hotspots
+│   └── weighted_semantic.py    ← Allocates ecological penalties (Plastic vs Paper)
+│
+├── visualization/
+│   └── visualizer.py           ← Fuses YOLO bounds and Spatial heatmaps into a single image
+│
+└── templates/ & static/        ← HTML, CSS, and JS defining the frontend Quad-Split Interface
+```
 
 ---
 
