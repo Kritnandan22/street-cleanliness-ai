@@ -1,0 +1,12 @@
+path: /Users/kritnandan/Desktop/Sem-8/EE-655/Project/street_cleanliness_system/data/processed/taco_yolo_real
+train: images/train
+val: images/val
+test: images/test
+nc: 6
+names:
+  0: plastic
+  1: metal
+  2: paper
+  3: organic
+  4: glass
+  5: other

@@ -1,0 +1,31 @@
+# Virtual environment
+.venv/
+env/
+venv/
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# IDEs
+.idea/
+.vscode/
+
+# Project specifics
+runs/
+output/
+app_debug.log
+
+# Mac OS
+.DS_Store
+
+# Ignore large datasets
+data/raw/TACO/*
+!data/raw/TACO/download.py
+!data/raw/TACO/detector/
+data/processed/taco_yolo_real/images/*
+data/processed/taco_yolo_real/labels/*
+
+# Only track our weights, ignore YOLO defaults
+*.pt
+!models/best_yolov8_taco.pt

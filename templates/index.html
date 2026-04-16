@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StreetClean AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+    <div class="glow-bg"></div>
+    <div class="glow-bg-2"></div>
+
+    <nav class="navbar">
+        <div class="logo">
+            <i class="fa-solid fa-leaf text-gradient"></i>
+            <span>StreetClean <span class="ai-badge">AI</span></span>
+        </div>
+        <div class="nav-links">
+            <a href="https://github.com/ultralytics/ultralytics" target="_blank">YOLOv8 + TACO</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <!-- Dashboard Header -->
+        <header class="hero">
+            <h1 class="hero-title">Spatial Intelligence &<br><span class="text-gradient">Context-Aware
+                    Cleanliness</span></h1>
+            <p class="hero-subtitle">Upload an image to detect litter, analyze spatial heatmaps, and compute an
+                ecologically-weighted cleanliness score based on environmental context.</p>
+        </header>
+
+        <!-- Upload Section -->
+        <section class="upload-section" id="uploadPanel">
+            <div class="glass-panel upload-dropzone" id="dropzone">
+                <input type="file" id="fileInput" accept="image/*" hidden>
+                <div class="upload-content">
+                    <div class="upload-icon-wrapper">
+                        <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+                    </div>
+                    <h2>Drag & Drop an image</h2>
+                    <p>or click to browse from your computer</p>
+                    <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">Select
+                        Image</button>
+                    <p class="small-info mt-2">Supports JPG, PNG (Max 16MB)</p>
+                </div>
+
+                <!-- Loading State Overlay -->
+                <div class="loading-overlay" id="loadingState">
+                    <div class="spinner"></div>
+                    <h3>Processing through Deep Neural Networks...</h3>
+                    <div class="loading-steps">
+                        <div class="step active">YOLOv8 Litter Detection</div>
+                        <div class="step">Scene Classification</div>
+                        <div class="step">Spatial Heatmap Generation</div>
+                        <div class="step">Ecological Weighting</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Results Section (Hidden initially) -->
+        <section class="results-section hidden" id="resultsPanel">
+            <!-- Top Controls -->
+            <div class="results-header">
+                <h2>Analysis Complete</h2>
+                <button class="btn btn-outline" id="resetBtn">
+                    <i class="fa-solid fa-arrow-rotate-left"></i> Analyze Another
+                </button>
+            </div>
+
+            <div class="results-grid">
+
+                <!-- Left Column: Visualizations -->
+                <div class="visual-col">
+                    <div class="glass-panel viewer-panel">
+                        <div class="image-container quad-view"
+                            style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; width: 100%;">
+                            <div style="flex: 1;">
+                                <h4 style="text-align:center; margin-bottom:0.5rem; color:var(--text-secondary)">
+                                    Original Image</h4>
+                                <img id="originalImage" src="" alt="Original Image"
+                                    style="width:100%; border-radius:12px; display:block;">
+                            </div>
+                            <div style="flex: 1;">
+                                <h4 style="text-align:center; margin-bottom:0.5rem; color:var(--text-secondary)">Labels
+                                    & Boxes</h4>
+                                <img id="labelsImage" src="" alt="Labels Only"
+                                    style="width:100%; border-radius:12px; display:block;">
+                            </div>
+                            <div style="flex: 1;">
+                                <h4 style="text-align:center; margin-bottom:0.5rem; color:var(--text-secondary)">Spatial
+                                    Heatmap</h4>
+                                <img id="heatmapImage" src="" alt="Heatmap Only"
+                                    style="width:100%; border-radius:12px; display:block;">
+                            </div>
+                            <div style="flex: 1;">
+                                <h4 style="text-align:center; margin-bottom:0.5rem; color:var(--text-secondary)">Full
+                                    Prediction</h4>
+                                <img id="resultImage" src="" alt="Annotated Output"
+                                    style="width:100%; border-radius:12px; display:block;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel hotspot-panel mt-4">
+                        <h3 class="panel-subtitle"><i class="fa-solid fa-fire"></i> Primary Hotspots Detected</h3>
+                        <div class="hotspot-list" id="hotspotContainer">
+                            <!-- Hotspots injected via JS -->
+                        </div>
+                        <div class="empty-state hidden" id="noHotspotsMsg">
+                            No critical pollution clusters identified.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Metrics Dashboard -->
+                <div class="metrics-col">
+
+                    <!-- Final Score Card -->
+                    <div class="glass-panel score-card primary-score" id="scoreCard">
+                        <div class="score-header">
+                            <div>
+                                <h3 class="card-title">Cleanliness Score</h3>
+                                <div class="scene-badge"><i class="fa-solid fa-map-location-dot"></i> Scene: <strong
+                                        id="sceneClass">Street</strong></div>
+                            </div>
+                            <div class="status-badge" id="cleanlinessLevel">Good</div>
+                        </div>
+                        <div class="score-dial">
+                            <svg viewBox="0 0 36 36" class="circular-chart">
+                                <path class="circle-bg" d="M18 2.0845
+                                    a 15.9155 15.9155 0 0 1 0 31.831
+                                    a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                <path class="circle" id="scoreCircle" stroke-dasharray="0, 100" d="M18 2.0845
+                                    a 15.9155 15.9155 0 0 1 0 31.831
+                                    a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                <text x="18" y="20.35" class="percentage" id="scoreValue">0.0</text>
+                            </svg>
+                            <div class="max-score">/ 5.0</div>
+                        </div>
+                        <div class="recommendation-box" id="recommendationText">
+                            Maintain current cleaning schedule.
+                        </div>
+                    </div>
+
+                    <!-- Breakdown Cards -->
+                    <div class="metrics-grid">
+
+                        <!-- Raw Detections -->
+                        <div class="glass-panel stat-card">
+                            <div class="stat-icon purple"><i class="fa-solid fa-trash-can"></i></div>
+                            <div class="stat-body">
+                                <h4>Raw Detections</h4>
+                                <div class="stat-value" id="rawCount">0</div>
+                                <div class="stat-sub">Items found</div>
+                            </div>
+                        </div>
+
+                        <!-- Context Score -->
+                        <div class="glass-panel stat-card">
+                            <div class="stat-icon blue"><i class="fa-solid fa-layer-group"></i></div>
+                            <div class="stat-body">
+                                <h4>Context Score</h4>
+                                <div class="stat-value"><span id="contextScore">0.0</span> <span class="max-sub">/
+                                        5</span></div>
+                                <div class="stat-sub">Baseline norm</div>
+                            </div>
+                        </div>
+
+                        <!-- Semantic Score -->
+                        <div class="glass-panel stat-card fw">
+                            <div class="stat-icon orange"><i class="fa-solid fa-weight-scale"></i></div>
+                            <div class="stat-body">
+                                <h4>Semantic Weight Score</h4>
+                                <div class="stat-value"><span id="semanticScore">0.0</span> <span class="max-sub">/
+                                        5</span></div>
+                                <div class="stat-sub">Ecological severity penalty (Class × Area)</div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>EE-655 Computer Vision Final Project • TACO Dataset (1500 images) • YOLOv8</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+
+</html>

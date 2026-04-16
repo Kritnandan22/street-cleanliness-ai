@@ -1,0 +1,11 @@
+available_images=1035
+train_images=724
+val_images=207
+test_images=104
+class_annotation_counts:
+  plastic: 1418
+  metal: 259
+  paper: 134
+  organic: 418
+  glass: 125
+  other: 741
