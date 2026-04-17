@@ -1,12 +1,4 @@
----
-title: StreetClean AI
-emoji: 🏢
-colorFrom: blue
-colorTo: green
-sdk: docker
-app_port: 7860
-pinned: false
----
+
 # StreetClean AI: Context-Aware Urban Cleanliness System
 
 ![StreetClean AI](https://img.shields.io/badge/Status-Active-success)
