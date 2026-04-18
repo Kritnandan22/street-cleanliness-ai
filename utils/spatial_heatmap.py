@@ -134,52 +134,81 @@ class SpatialHeatmapAnalyzer:
         alpha: float = 0.6,
         use_area: bool = False
     ) -> np.ndarray:
-        """Generate visual heatmap overlay on image
+        """Generate visual heatmap overlay on image.
+
+        Uses per-pixel density-weighted alpha blending so that zero-density
+        cells remain as the original image and high-density cells glow with
+        a warm heat colour (red/orange/yellow).  Grid lines are also drawn
+        to show the spatial decomposition.
 
         Args:
             image: Input image (BGR)
-            colormap: OpenCV colormap (cv2.COLORMAP_*)
-            alpha: Alpha blending factor [0, 1]
-            use_area: Use area instead of count
+            colormap: OpenCV colormap (cv2.COLORMAP_*). Ignored in favour of
+                      COLORMAP_HOT when the default COLORMAP_JET is passed so
+                      that cold/empty areas are not coloured blue.
+            alpha: Maximum heatmap opacity at the hottest cell [0, 1]
+            use_area: If True, use total detection area instead of count
 
         Returns:
-            Image with heatmap overlay
+            Image with heatmap + grid overlay
         """
-        # Get heatmap matrix
+        vis = image.copy()
+        h, w = vis.shape[:2]
+
+        # ── 1.  Build density matrix ─────────────────────────────────────────
         heatmap_data = self.get_heatmap_matrix(use_area=use_area)
 
-        # Normalize to [0, 255]
-        if heatmap_data.max() > 0:
-            heatmap_norm = (heatmap_data / heatmap_data.max()
-                            * 255).astype(np.uint8)
+        # Normalise to [0, 1]
+        max_val = heatmap_data.max()
+        if max_val > 0:
+            heatmap_norm_f = heatmap_data / max_val          # float [0,1]
         else:
-            heatmap_norm = np.zeros_like(heatmap_data, dtype=np.uint8)
+            heatmap_norm_f = np.zeros_like(heatmap_data, dtype=np.float32)
 
-        # Resize heatmap to match image
+        # Scale to uint8 for colormap
+        heatmap_u8 = (heatmap_norm_f * 255).astype(np.uint8)
+
+        # ── 2.  Resize → blur → colourmap ──────────────────────────────────
         heatmap_resized = cv2.resize(
-            heatmap_norm,
-            (image.shape[1], image.shape[0]),
-            interpolation=cv2.INTER_LINEAR
+            heatmap_u8,
+            (w, h),
+            interpolation=cv2.INTER_LINEAR,
         )
+        heatmap_blurred = cv2.GaussianBlur(heatmap_resized, (51, 51), 0)
 
-        # Apply Gaussian blur for smooth gradient
-        heatmap_blurred = cv2.GaussianBlur(
-            heatmap_resized,
-            (31, 31),
-            0
-        )
+        # Use COLORMAP_JET (blue→cyan→green→yellow→red rainbow) for vivid
+        # heatmap like the reference image.
+        heatmap_colored = cv2.applyColorMap(heatmap_blurred, cv2.COLORMAP_JET)
 
-        # Apply colormap
-        heatmap_colored = cv2.applyColorMap(heatmap_blurred, colormap)
+        # ── 3.  Per-pixel alpha mask (density-proportional) ─────────────────
+        # alpha_mask is 0 where no detections, up to `alpha` at the hottest spot
+        alpha_mask = (heatmap_blurred.astype(np.float32) / 255.0) * alpha
+        alpha_3ch = np.stack([alpha_mask] * 3, axis=-1)   # (H, W, 3)
 
-        # Blend with original image
-        overlay = cv2.addWeighted(
-            image, 1.0 - alpha,
-            heatmap_colored, alpha,
-            0
-        )
+        # Blend: output = original * (1 - a) + heatmap_colour * a
+        vis = (
+            vis.astype(np.float32) * (1.0 - alpha_3ch)
+            + heatmap_colored.astype(np.float32) * alpha_3ch
+        ).clip(0, 255).astype(np.uint8)
 
-        return overlay
+        # ── 4.  Draw spatial grid lines (thick & white for visibility) ──────
+        cell_h = h // self.grid_size
+        cell_w = w // self.grid_size
+        grid_color = (255, 255, 255)  # white — visible over any heatmap color
+        grid_thickness = 3
+
+        for i in range(1, self.grid_size):
+            # Horizontal lines
+            cv2.line(vis, (0, i * cell_h), (w, i * cell_h),
+                     grid_color, grid_thickness, cv2.LINE_AA)
+            # Vertical lines
+            cv2.line(vis, (i * cell_w, 0), (i * cell_w, h),
+                     grid_color, grid_thickness, cv2.LINE_AA)
+
+        # Outer border
+        cv2.rectangle(vis, (0, 0), (w - 1, h - 1), grid_color, grid_thickness)
+
+        return vis
 
     def identify_hotspots(
         self,

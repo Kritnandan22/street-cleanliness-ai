@@ -15,6 +15,8 @@ from werkzeug.utils import secure_filename
 # Import the core detection system
 from inference.detection_pipeline import StreetCleanlinessDetectionSystem
 from visualization.visualizer import create_full_visualization
+from utils.context_aware_scorer import ScoreInterpretation
+
 
 app = Flask(__name__)
 # Allow 16MB max upload size
@@ -100,30 +102,42 @@ def analyze():
             heatmap_b64 = encode_img(vis_heatmap)
             original_b64 = encode_img(img)
             
-            # Build Super Dynamic Recommendation
-            dynamic_rec = str(results["recommendation"])
-            
-            # Analyze composition
+            # Compute final cleanliness score first (needed for recommendation + badge)
+            _litter_count = int(results["litter_count"])
+            _ctx = float(results["context_aware_score"])
+            _sem = float(results["weighted_semantic_score"])
+            # Clean image → context score directly (5.0); dirty → blended
+            _final_score = _ctx if _litter_count == 0 else min(
+                (0.55 * _ctx) + (0.45 * (5.0 - _sem)), 5.0
+            )
+            # Derive level badge AND recommendation from the actual final score
+            _level = ScoreInterpretation.interpret_score(_final_score)[0]
+
+            # Build recommendation from the CORRECT final score (not context_score)
+            dynamic_rec = ScoreInterpretation.get_recommendation(
+                _final_score, results["scene_class"]
+            )
+
+            # Append ecological alerts based on detected classes
             detected_classes = set(d.class_name for d in results.get("detections", []))
             if "glass" in detected_classes:
                 dynamic_rec += " Hazard warning: glass detected; require specialized cleanup gear."
             elif "plastic" in detected_classes or "metal" in detected_classes:
                 dynamic_rec += " Ecological alert: High-impact non-biodegradable materials present."
-                
-            # Analyze spatial hotspots
+
+            # Append spatial hotspot info
             valid_hotspots = [h for h in results.get("hotspots", []) if h.get("severity") in ("Critical", "High", "Medium")]
             if valid_hotspots:
                 worst_severity = str(valid_hotspots[0].get("severity", "Medium"))
                 dynamic_rec += f" Dispatch targeted sweep team straight to {worst_severity}-severity spatial clusters."
-            
-            # Clean up numpy types for JSON serialization
+
             results_safe = {
-                "litter_count": int(results["litter_count"]),
+                "litter_count": _litter_count,
                 "scene_class": str(results["scene_class"]),
-                "context_aware_score": float(results["context_aware_score"]),
-                "weighted_semantic_score": float(results["weighted_semantic_score"]),
-                "final_cleanliness_score": (0.55 * float(results["context_aware_score"])) + (0.45 * float(results["weighted_semantic_score"])),
-                "cleanliness_level": str(results["cleanliness_level"]),
+                "context_aware_score": round(_ctx, 2),
+                "weighted_semantic_score": round(_sem, 2),
+                "final_cleanliness_score": round(_final_score, 2),
+                "cleanliness_level": _level,
                 "recommendation": dynamic_rec,
                 "hotspots": [
                     {

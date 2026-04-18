@@ -97,7 +97,7 @@ class WeightedSemanticScorer:
         detections: List,
         image_width: int,
         image_height: int,
-        confidence_threshold: float = 0.4
+        confidence_threshold: float = 0.15
     ) -> float:
         """Compute overall weighted litter score
 
@@ -145,7 +145,7 @@ class WeightedSemanticScorer:
         detections: List,
         image_width: int,
         image_height: int,
-        confidence_threshold: float = 0.4
+        confidence_threshold: float = 0.15
     ) -> Dict[str, Dict]:
         """Compute weighted score breakdown by class
 
@@ -201,7 +201,7 @@ class WeightedSemanticScorer:
         detections: List,
         image_width: int,
         image_height: int,
-        confidence_threshold: float = 0.4
+        confidence_threshold: float = 0.15
     ) -> float:
         """Compute importance-normalized score (0-5 scale)
 
@@ -220,11 +220,31 @@ class WeightedSemanticScorer:
             detections, image_width, image_height, confidence_threshold
         )
 
-        # Map normalized weighted score to 0-5 scale
-        # Consider max reasonable weighted score is around 1.0 for a very dirty image
-        # Use sigmoid-like scaling
-        scaled_score = min(weighted_score * 5, 5.0)
+        # Map normalized weighted score to 0-5 scale.
+        # The old formula (weighted_score * 5) assumed litter fills ~100% of
+        # the image, which makes real-world small items round to 0.0.
+        #
+        # New approach: each detection contributes up to (class_weight * confidence)
+        # points on a per-item basis, area is used as a mild amplifier rather than
+        # a primary factor. Reference: 1 high-impact item confidently detected →
+        # score ≈ 1.5–2.0; 5 items → approaches 5.0.
+        #
+        # Formula: Σ(class_weight × confidence × (1 + 10 × normalized_area))
+        # This gives ~0.6–1.0 per small item and caps naturally at 5.
+        image_area = image_width * image_height
+        per_item_score = 0.0
+        for d in detections:
+            if d.confidence < confidence_threshold:
+                continue
+            w = self.get_weight(d.class_name)
+            x_min, y_min, x_max, y_max = d.bbox
+            bbox_area = (x_max - x_min) * (y_max - y_min)
+            norm_area = bbox_area / image_area if image_area > 0 else 0
+            # area amplifier: small item → ×1.0 baseline, large item → up to ×11
+            area_amp = 1.0 + 10.0 * norm_area
+            per_item_score += w * d.confidence * area_amp
 
+        scaled_score = min(per_item_score, 5.0)
         return scaled_score
 
     def get_weight_category(self, class_name: str) -> str:
@@ -243,7 +263,7 @@ class WeightedSemanticScorer:
         image_width: int,
         image_height: int,
         scene_class: str = "street",
-        confidence_threshold: float = 0.4
+        confidence_threshold: float = 0.15
     ) -> Dict:
         """Generate comprehensive weighted scoring report
 

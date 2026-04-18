@@ -45,8 +45,9 @@ def draw_detections(
     detections: list,
     confidence_threshold: float = 0.35,
     show_confidence: bool = True,
-    thickness: int = 2,
-    font_scale: float = 0.55,
+    thickness: int = 3,
+    font_scale: float = 0.8,
+    exclude_classes: list = None,
 ) -> np.ndarray:
     """Draw bounding boxes with class-colored labels.
 
@@ -73,6 +74,8 @@ def draw_detections(
 
         if conf < confidence_threshold:
             continue
+        if exclude_classes and cname.lower() in [c.lower() for c in exclude_classes]:
+            continue
 
         x1, y1, x2, y2 = [int(v) for v in bbox]
         color = CLASS_COLORS.get(cname.lower(), DEFAULT_COLOR)
@@ -95,7 +98,7 @@ def draw_detections(
                       color, -1)
         cv2.putText(vis, label, (x1 + 2, label_y1 + lh + 2),
                     cv2.FONT_HERSHEY_SIMPLEX, font_scale,
-                    (255, 255, 255), 1, cv2.LINE_AA)
+                    (255, 255, 255), 2, cv2.LINE_AA)
 
     return vis
 
@@ -242,7 +245,8 @@ def create_full_visualization(
     if show_bboxes:
         dets = results.get("detections", [])
         vis = draw_detections(vis, dets,
-                              confidence_threshold=bbox_confidence)
+                              confidence_threshold=bbox_confidence,
+                              exclude_classes=["metal"])
 
     # 3. Hotspot markers
     if show_hotspots and results.get("hotspots"):
