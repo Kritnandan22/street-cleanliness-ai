@@ -1,26 +1,21 @@
-"""
-Visualization Module for Street Cleanliness Detection System
-Provides all drawing, overlay, and chart generation utilities.
-"""
-
 import cv2
 import numpy as np
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 
-# ─── Color Palettes ──────────────────────────────────────────────────────────
-
+# color for each litter class
 CLASS_COLORS = {
-    "plastic":  (0, 80, 255),    # vivid blue
+    "plastic":  (0, 80, 255),    # blue
     "metal":    (0, 165, 255),   # orange
-    "paper":    (0, 255, 180),   # cyan-green
+    "paper":    (0, 255, 180),   # cyan green
     "organic":  (50, 220, 50),   # green
     "glass":    (200, 0, 200),   # magenta
     "other":    (128, 128, 128), # gray
 }
 DEFAULT_COLOR = (0, 255, 0)
 
+# color for each severity level of hotspot
 SEVERITY_COLORS = {
     "Critical": (0, 0, 220),
     "High":     (0, 100, 255),
@@ -29,6 +24,7 @@ SEVERITY_COLORS = {
     "None":     (100, 100, 100),
 }
 
+# color for each cleanliness level badge
 SCORE_COLORS = {
     "Excellent": (0, 200, 80),
     "Good":      (80, 220, 0),
@@ -37,8 +33,6 @@ SCORE_COLORS = {
     "Critical":  (0, 0, 220),
 }
 
-
-# ─── Bounding Box Drawing ─────────────────────────────────────────────────────
 
 def draw_detections(
     image: np.ndarray,
@@ -49,20 +43,10 @@ def draw_detections(
     font_scale: float = 0.8,
     exclude_classes: list = None,
 ) -> np.ndarray:
-    """Draw bounding boxes with class-colored labels.
-
-    Args:
-        image: BGR image (numpy array)
-        detections: List of Detection objects or dicts with 'class_name',
-                    'confidence', 'bbox' (x1,y1,x2,y2)
-        confidence_threshold: Minimum confidence to draw
-    Returns:
-        Annotated copy of image
-    """
     vis = image.copy()
 
     for det in detections:
-        # Support both Detection objects and plain dicts
+        # support both detection objects and plain dicts
         if hasattr(det, "confidence"):
             conf = det.confidence
             cname = det.class_name
@@ -80,18 +64,20 @@ def draw_detections(
         x1, y1, x2, y2 = [int(v) for v in bbox]
         color = CLASS_COLORS.get(cname.lower(), DEFAULT_COLOR)
 
-        # Draw box with slight shadow for depth
+        # draw box with shadow for depth effect
         cv2.rectangle(vis, (x1 + 1, y1 + 1), (x2 + 1, y2 + 1),
-                      (0, 0, 0), thickness)   # shadow
+                      (0, 0, 0), thickness)
         cv2.rectangle(vis, (x1, y1), (x2, y2), color, thickness)
 
-        # Label background
+        # build label text
         label = f"{cname}"
         if show_confidence:
             label += f" {conf:.2f}"
         (lw, lh), bl = cv2.getTextSize(
             label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1)
         label_y1 = max(y1 - lh - bl - 4, 0)
+
+        # filled background behind label
         cv2.rectangle(vis,
                       (x1, label_y1),
                       (x1 + lw + 4, label_y1 + lh + bl + 4),
@@ -103,27 +89,16 @@ def draw_detections(
     return vis
 
 
-# ─── Score Panel / HUD ────────────────────────────────────────────────────────
-
 def draw_score_panel(
     image: np.ndarray,
     results: Dict,
     panel_alpha: float = 0.75,
     panel_width: int = 300,
 ) -> np.ndarray:
-    """Draw a semi-transparent HUD panel showing scene + scores.
-
-    Args:
-        image: BGR image
-        results: Results dict from StreetCleanlinessDetectionSystem.process_image()
-        panel_alpha: Opacity of background panel
-    Returns:
-        Image with HUD overlay
-    """
     vis = image.copy()
     h, w = vis.shape[:2]
 
-    # Panel rectangle
+    # panel background
     pw = min(panel_width, w - 10)
     ph = 185
     panel = vis[5: 5 + ph, 5: 5 + pw].copy()
@@ -158,27 +133,17 @@ def draw_score_panel(
     return vis
 
 
-# ─── Heatmap Overlay ─────────────────────────────────────────────────────────
-
 def draw_heatmap_overlay(
     image: np.ndarray,
     spatial_analyzer,
     alpha: float = 0.45,
     colormap: int = cv2.COLORMAP_JET,
 ) -> np.ndarray:
-    """Blend a spatial litter heatmap over the image.
-
-    Args:
-        image: BGR image
-        spatial_analyzer: Populated SpatialHeatmapAnalyzer instance
-        alpha: Heatmap visibility  [0=invisible, 1=fully opaque]
-    """
+    # just call the analyzer overlay function
     return spatial_analyzer.generate_heatmap_overlay(
         image, colormap=colormap, alpha=alpha
     )
 
-
-# ─── Hotspot Markers ──────────────────────────────────────────────────────────
 
 def draw_hotspot_markers(
     image: np.ndarray,
@@ -186,13 +151,6 @@ def draw_hotspot_markers(
     max_show: int = 5,
     thickness: int = 2,
 ) -> np.ndarray:
-    """Draw severity-colored hotspot rectangles.
-
-    Args:
-        image: BGR image
-        hotspots: Output of SpatialHeatmapAnalyzer.identify_hotspots()
-        max_show: Maximum number of hotspots to show
-    """
     vis = image.copy()
     for i, hs in enumerate(hotspots[:max_show]):
         x1, y1, x2, y2 = hs["pixel_bounds"]
@@ -209,8 +167,6 @@ def draw_hotspot_markers(
     return vis
 
 
-# ─── Full Composite Visualisation ─────────────────────────────────────────────
-
 def create_full_visualization(
     image_path: str,
     results: Dict,
@@ -222,58 +178,39 @@ def create_full_visualization(
     heatmap_alpha: float = 0.40,
     bbox_confidence: float = 0.35,
 ) -> np.ndarray:
-    """Create the complete annotated output image.
-
-    Args:
-        image_path: Path to original image
-        results: Output of StreetCleanlinessDetectionSystem.process_image()
-        spatial_analyzer: Populated SpatialHeatmapAnalyzer instance
-    Returns:
-        Fully annotated BGR image
-    """
     img = cv2.imread(image_path)
     if img is None:
         raise ValueError(f"Cannot read image: {image_path}")
 
     vis = img.copy()
 
-    # 1. Heatmap
+    # 1. heatmap overlay
     if show_heatmap:
         vis = draw_heatmap_overlay(vis, spatial_analyzer, alpha=heatmap_alpha)
 
-    # 2. Bounding boxes
+    # 2. bounding boxes
     if show_bboxes:
         dets = results.get("detections", [])
         vis = draw_detections(vis, dets,
                               confidence_threshold=bbox_confidence,
                               exclude_classes=["metal"])
 
-    # 3. Hotspot markers
+    # 3. hotspot markers
     if show_hotspots and results.get("hotspots"):
         vis = draw_hotspot_markers(vis, results["hotspots"])
 
-    # 4. Score HUD panel
+    # 4. score panel hud
     if show_panel:
         vis = draw_score_panel(vis, results)
 
     return vis
 
 
-# ─── Ablation Comparison Chart ────────────────────────────────────────────────
-
 def create_ablation_chart(
     rows: List[Dict],
     output_path: Optional[str] = None,
     title: str = "Ablation Study: Cleanliness Scoring Modes",
 ) -> Optional[np.ndarray]:
-    """Generate a matplotlib figure comparing the four scoring modes.
-
-    Args:
-        rows: List of per-image ablation result dicts
-        output_path: If given, save to this path
-    Returns:
-        BGR image of the chart (as numpy array), or None if matplotlib unavailable
-    """
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -296,7 +233,6 @@ def create_ablation_chart(
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
     fig.suptitle(title, fontsize=13, fontweight="bold")
 
-    # Bar chart
     bars = ax1.bar(labels, means, yerr=stds, color=colors,
                    capsize=6, edgecolor="black", linewidth=0.7)
     ax1.set_ylim(0, 6.0)
@@ -309,7 +245,6 @@ def create_ablation_chart(
                  m + s + 0.08, f"{m:.2f}",
                  ha="center", va="bottom", fontsize=10, fontweight="bold")
 
-    # Line plot (first 30 images)
     n = min(30, len(rows))
     sample = rows[:n]
     xi = list(range(n))
@@ -328,7 +263,6 @@ def create_ablation_chart(
     if output_path:
         plt.savefig(output_path, dpi=150, bbox_inches="tight")
 
-    # Convert to BGR numpy array
     fig.canvas.draw()
     buf = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
     buf = buf.reshape(fig.canvas.get_width_height()[::-1] + (3,))
@@ -336,19 +270,16 @@ def create_ablation_chart(
     return cv2.cvtColor(buf, cv2.COLOR_RGB2BGR)
 
 
-# ─── Score Bar (horizontal banner) ────────────────────────────────────────────
-
 def draw_score_banner(
     image: np.ndarray,
     score: float,
     label: str = "Cleanliness Score",
     position: str = "bottom",
 ) -> np.ndarray:
-    """Draw a horizontal colored score bar at top or bottom of image."""
     vis = image.copy()
     h, w = vis.shape[:2]
 
-    # Map score 0-5 to color  (red ← → green)
+    # map score to color from red to green
     t = max(0.0, min(1.0, score / 5.0))
     r = int(220 * (1 - t))
     g = int(200 * t)

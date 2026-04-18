@@ -1,8 +1,3 @@
-"""
-Dataset loading and processing utilities
-Handles TACO, Roboflow, and custom dataset formats
-"""
-
 import json
 import cv2
 import numpy as np
@@ -14,7 +9,6 @@ import yaml
 
 @dataclass
 class DatasetConfig:
-    """Configuration for dataset"""
     dataset_path: Path
     format: str  # 'coco', 'yolo', 'pascal_voc'
     image_extensions: List[str] = None
@@ -25,7 +19,7 @@ class DatasetConfig:
 
 
 class COCODatasetLoader:
-    """Loader for COCO format annotations (TACO dataset)"""
+    # loads coco json annotations (taco uses this format)
 
     def __init__(self, dataset_path: Path):
         self.dataset_path = Path(dataset_path)
@@ -34,12 +28,10 @@ class COCODatasetLoader:
         self.categories = None
 
     def load_annotations(self, annotation_file: str = "instances_default.json"):
-        """Load COCO format annotations"""
         annotation_path = self.dataset_path / annotation_file
 
         if not annotation_path.exists():
-            raise FileNotFoundError(
-                f"Annotation file not found: {annotation_path}")
+            raise FileNotFoundError(f"not found: {annotation_path}")
 
         with open(annotation_path, 'r') as f:
             data = json.load(f)
@@ -52,52 +44,37 @@ class COCODatasetLoader:
         return self
 
     def get_image_annotations(self, image_id: int) -> List[Dict]:
-        """Get all annotations for a specific image"""
         if self.annotations is None:
-            raise RuntimeError("Call load_annotations() first")
-
+            raise RuntimeError("call load_annotations() first")
         return [ann for ann in self.annotations if ann['image_id'] == image_id]
 
     def get_category_name(self, category_id: int) -> str:
-        """Get category name from ID"""
         return self.categories.get(category_id, "unknown")
 
     def get_all_category_names(self) -> List[str]:
-        """Get all unique category names"""
         return list(set(self.categories.values()))
 
 
 class YOLODatasetLoader:
-    """Loader for YOLO format annotations"""
 
     def __init__(self, dataset_path: Path):
         self.dataset_path = Path(dataset_path)
         self.classes = None
 
     def load_classes(self, classes_file: str = "classes.txt"):
-        """Load class names from YOLO format file"""
         classes_path = self.dataset_path / classes_file
-
         if not classes_path.exists():
-            raise FileNotFoundError(f"Classes file not found: {classes_path}")
-
+            raise FileNotFoundError(f"not found: {classes_path}")
         with open(classes_path, 'r') as f:
             self.classes = [line.strip() for line in f.readlines()]
-
         return self
 
+    # todo: karan fix load_annotation to handle missing label files
     def load_annotation(self, annotation_file: Path) -> List[Dict]:
-        """Load YOLO format annotation (.txt file)
-
-        YOLO format:
-        <class_id> <x_center> <y_center> <width> <height>
-        (normalized coordinates 0-1)
-        """
+        # yolo format: class_id x_center y_center width height (normalized)
         annotations = []
-
         if not annotation_file.exists():
             return annotations
-
         with open(annotation_file, 'r') as f:
             for line in f:
                 parts = line.strip().split()
@@ -109,12 +86,10 @@ class YOLODatasetLoader:
                         'width': float(parts[3]),
                         'height': float(parts[4])
                     })
-
         return annotations
 
 
 class DatasetConverter:
-    """Convert between different annotation formats"""
 
     @staticmethod
     def coco_to_yolo(
@@ -122,18 +97,10 @@ class DatasetConverter:
         image_width: int,
         image_height: int
     ) -> Dict:
-        """Convert COCO format to YOLO format
-
-        COCO: [x_min, y_min, width, height]
-        YOLO: [x_center, y_center, width, height] (normalized)
-        """
+        # coco: [x_min, y_min, w, h] → yolo: [cx, cy, w, h] normalized
         x_min, y_min, width, height = coco_annotation['bbox']
-
-        # Convert to center coordinates
         x_center = (x_min + width / 2) / image_width
         y_center = (y_min + height / 2) / image_height
-
-        # Normalize dimensions
         width_norm = width / image_width
         height_norm = height / image_height
 
@@ -151,7 +118,7 @@ class DatasetConverter:
         image_width: int,
         image_height: int
     ) -> Tuple[int, int, int, int]:
-        """Convert YOLO to pixel coordinates [x_min, y_min, x_max, y_max]"""
+        # yolo normalized → pixel x1y1x2y2
         x_center = yolo_annotation['x_center'] * image_width
         y_center = yolo_annotation['y_center'] * image_height
         width = yolo_annotation['width'] * image_width
@@ -166,7 +133,6 @@ class DatasetConverter:
 
 
 class DatasetMerger:
-    """Merge multiple datasets into unified training set"""
 
     def __init__(self, output_path: Path):
         self.output_path = Path(output_path)
@@ -175,20 +141,13 @@ class DatasetMerger:
         self.next_class_id = 0
 
     def get_or_create_class_id(self, class_name: str) -> int:
-        """Get existing class ID or create new one"""
         if class_name not in self.class_mapping:
             self.class_mapping[class_name] = self.next_class_id
             self.next_class_id += 1
         return self.class_mapping[class_name]
 
     def save_class_mapping(self, filename: str = "classes.txt"):
-        """Save unified class mapping"""
-        # Sort by class ID
-        sorted_classes = sorted(
-            self.class_mapping.items(),
-            key=lambda x: x[1]
-        )
-
+        sorted_classes = sorted(self.class_mapping.items(), key=lambda x: x[1])
         with open(self.output_path / filename, 'w') as f:
             for class_name, _ in sorted_classes:
                 f.write(f"{class_name}\n")
@@ -199,10 +158,7 @@ class DatasetMerger:
         images_dir: Path,
         dataset_name: str = "dataset1"
     ):
-        """Merge COCO format dataset"""
         images_dir = Path(images_dir)
-
-        # Create output subdirectory
         output_images = self.output_path / "images" / dataset_name
         output_labels = self.output_path / "labels" / dataset_name
         output_images.mkdir(parents=True, exist_ok=True)
@@ -210,11 +166,9 @@ class DatasetMerger:
 
         for image_id, image_info in coco_loader.images.items():
             image_path = images_dir / image_info['file_name']
-
             if not image_path.exists():
                 continue
 
-            # Copy image
             img = cv2.imread(str(image_path))
             if img is None:
                 continue
@@ -223,24 +177,15 @@ class DatasetMerger:
             output_image_path = output_images / image_info['file_name']
             cv2.imwrite(str(output_image_path), img)
 
-            # Convert annotations
             annotations = coco_loader.get_image_annotations(image_id)
             output_label_path = output_labels / \
                 f"{Path(image_info['file_name']).stem}.txt"
 
             with open(output_label_path, 'w') as f:
                 for ann in annotations:
-                    yolo_ann = DatasetConverter.coco_to_yolo(
-                        ann, width, height
-                    )
-
-                    # Map class ID to unified ID
-                    category_name = coco_loader.get_category_name(
-                        yolo_ann['class_id'])
-                    unified_class_id = self.get_or_create_class_id(
-                        category_name)
-
-                    # Write YOLO format annotation
+                    yolo_ann = DatasetConverter.coco_to_yolo(ann, width, height)
+                    category_name = coco_loader.get_category_name(yolo_ann['class_id'])
+                    unified_class_id = self.get_or_create_class_id(category_name)
                     f.write(
                         f"{unified_class_id} "
                         f"{yolo_ann['x_center']:.6f} "
@@ -250,7 +195,6 @@ class DatasetMerger:
                     )
 
     def create_yaml_config(self, dataset_name: str = "merged_dataset"):
-        """Create YOLO format dataset.yaml configuration"""
         config = {
             'path': str(self.output_path),
             'train': 'images/train',
@@ -259,26 +203,23 @@ class DatasetMerger:
             'nc': len(self.class_mapping),
             'names': {v: k for k, v in self.class_mapping.items()}
         }
-
         with open(self.output_path / 'dataset.yaml', 'w') as f:
             yaml.dump(config, f, default_flow_style=False)
 
 
 class ImageAugmentation:
-    """Data augmentation utilities"""
+    # todo: mudit fix resize_image to return correct bbox coords too
 
     @staticmethod
     def resize_image(image: np.ndarray, target_size: int = 640) -> np.ndarray:
-        """Resize image maintaining aspect ratio"""
+        # letterbox resize with grey padding
         height, width = image.shape[:2]
         scale = target_size / max(height, width)
-
         new_width = int(width * scale)
         new_height = int(height * scale)
-
         resized = cv2.resize(image, (new_width, new_height))
 
-        # Pad to square
+        # pad to square
         pad_width = target_size - new_width
         pad_height = target_size - new_height
         pad_top = pad_height // 2
@@ -291,12 +232,10 @@ class ImageAugmentation:
             cv2.BORDER_CONSTANT,
             value=(114, 114, 114)
         )
-
         return padded
 
     @staticmethod
     def horizontal_flip(image: np.ndarray) -> np.ndarray:
-        """Flip image horizontally"""
         return cv2.flip(image, 1)
 
     @staticmethod
@@ -305,7 +244,6 @@ class ImageAugmentation:
         brightness: float = 0.1,
         contrast: float = 0.1
     ) -> np.ndarray:
-        """Adjust brightness and contrast"""
         img_float = image.astype(np.float32) / 255.0
         img_float = img_float * (1 + contrast) + brightness
         img_float = np.clip(img_float, 0, 1)
@@ -313,14 +251,11 @@ class ImageAugmentation:
 
     @staticmethod
     def rotate_image(image: np.ndarray, angle: float) -> np.ndarray:
-        """Rotate image by angle (in degrees)"""
         height, width = image.shape[:2]
         center = (width // 2, height // 2)
-
         rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
         rotated = cv2.warpAffine(
             image, rotation_matrix, (width, height),
             borderMode=cv2.BORDER_REFLECT
         )
-
         return rotated

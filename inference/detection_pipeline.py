@@ -1,7 +1,3 @@
-"""
-Main inference pipeline integrating all components
-"""
-
 import cv2
 import numpy as np
 from pathlib import Path
@@ -15,7 +11,6 @@ from utils.weighted_semantic_scorer import WeightedSemanticScorer
 
 
 class StreetCleanlinessDetectionSystem:
-    """Complete street cleanliness detection pipeline"""
 
     def __init__(
         self,
@@ -23,34 +18,27 @@ class StreetCleanlinessDetectionSystem:
         scene_classifier_path: Optional[str] = None,
         device: str = "cpu"
     ):
-        """Initialize the complete system
-
-        Args:
-            yolo_model_path: Path to YOLOv8 weights (will auto-download if None)
-            scene_classifier_path: Path to scene classifier weights
-            device: Device to run models on ('cpu' or 'cuda')
-        """
         self.device = device
 
-        # Initialize YOLOv8 (lazy import to avoid dependency issues)
+        # load yolo model, download if not found
         try:
             from ultralytics import YOLO
             if yolo_model_path:
                 self.yolo_model = YOLO(yolo_model_path)
             else:
-                # Will download if not present
+                # will auto download if not present
                 self.yolo_model = YOLO('yolov8n.pt')
         except ImportError:
             print("WARNING: ultralytics not installed. YOLO detection will not work.")
             self.yolo_model = None
 
-        # Initialize scene classifier
+        # init scene classifier
         self.scene_classifier = SceneClassificationPipeline(
             device=device,
             model_path=scene_classifier_path
         )
 
-        # Initialize scoring systems
+        # init all scoring modules
         self.context_scorer = ContextAwareScorer()
         self.spatial_analyzer = SpatialHeatmapAnalyzer(grid_size=8)
         self.semantic_scorer = WeightedSemanticScorer()
@@ -60,27 +48,18 @@ class StreetCleanlinessDetectionSystem:
         image: np.ndarray,
         confidence_threshold: float = 0.15
     ) -> List[Detection]:
-        """Detect litter objects in image using YOLOv8
-
-        Args:
-            image: Input image (BGR format)
-            confidence_threshold: Minimum confidence for detections
-
-        Returns:
-            List of Detection objects
-        """
         if self.yolo_model is None:
             print("ERROR: YOLO model not initialized")
             return []
 
-        # Run inference
+        # run yolo inference on image
         results = self.yolo_model(
             image, conf=confidence_threshold, verbose=False)
         detections = []
 
         for result in results:
             for box in result.boxes:
-                # Extract detection info
+                # get box coords and class info
                 x_min, y_min, x_max, y_max = box.xyxy[0].cpu().numpy()
                 confidence = box.conf[0].item()
                 class_id = int(box.cls[0].item())
@@ -93,7 +72,7 @@ class StreetCleanlinessDetectionSystem:
                     bbox=(int(x_min), int(y_min), int(x_max), int(y_max))
                 )
 
-                # Compute area
+                # compute normalized area of detection
                 detection.compute_area(image.shape[1], image.shape[0])
 
                 detections.append(detection)
@@ -104,14 +83,7 @@ class StreetCleanlinessDetectionSystem:
         self,
         image: np.ndarray
     ) -> Tuple[str, float, Dict[str, float]]:
-        """Classify scene in image
-
-        Args:
-            image: Input image (BGR format)
-
-        Returns:
-            (scene_class, confidence, probabilities_dict)
-        """
+        # returns scene name, confidence, and all class probabilities
         return self.scene_classifier.predict(image)
 
     def process_image(
@@ -120,47 +92,37 @@ class StreetCleanlinessDetectionSystem:
         return_detections: bool = True,
         return_analysis: bool = True
     ) -> Dict:
-        """Process single image and compute all metrics
-
-        Args:
-            image_path: Path to image file
-            return_detections: Include raw detections in output
-            return_analysis: Include all analysis in output
-
-        Returns:
-            Dictionary with all computed metrics and visualizations
-        """
-        # Load image
+        # load image from disk
         image = cv2.imread(image_path)
         if image is None:
             raise ValueError(f"Failed to load image: {image_path}")
 
         height, width = image.shape[:2]
 
-        # Step 1: Detect litter
+        # step 1: detect litter with yolo
         detections = self.detect_litter(image)
 
-        # Step 2: Classify scene
+        # step 2: classify what kind of scene it is
         scene_class, scene_confidence, scene_probs = self.classify_scene(image)
 
-        # Step 3: Context-aware scoring
+        # step 3: context aware score based on scene baseline
         context_score = self.context_scorer.compute_context_aware_score(
             detections, scene_class
         )
 
-        # Step 4: Spatial heatmap analysis
+        # step 4: spatial grid heatmap analysis
         self.spatial_analyzer.create_grid(height, width)
         self.spatial_analyzer.populate_grid(detections)
         hotspots = self.spatial_analyzer.identify_hotspots(
             threshold_percentile=75.0)
         grid_stats = self.spatial_analyzer.get_grid_statistics()
 
-        # Step 5: Weighted semantic scoring
+        # step 5: weighted semantic score based on ecological impact
         weighted_report = self.semantic_scorer.generate_score_report(
             detections, width, height, scene_class
         )
 
-        # Create result dictionary
+        # put everything in result dict
         result = {
             "image_path": str(image_path),
             "image_size": (width, height),
@@ -194,34 +156,22 @@ class StreetCleanlinessDetectionSystem:
         show_hotspots: bool = True,
         show_bboxes: bool = True
     ) -> np.ndarray:
-        """Create visualization of results
-
-        Args:
-            image_path: Path to image
-            results: Results dict from process_image()
-            show_heatmap: Include heatmap overlay
-            show_hotspots: Highlight hotspot regions
-            show_bboxes: Draw bounding boxes
-
-        Returns:
-            Visualization image
-        """
         image = cv2.imread(image_path)
         vis = image.copy()
 
         detections = results.get("detections", [])
 
-        # Draw bounding boxes
+        # draw bounding boxes for confident detections
         if show_bboxes:
             for detection in detections:
                 if detection.confidence >= 0.4:
                     x_min, y_min, x_max, y_max = detection.bbox
 
-                    # Draw box
+                    # draw the box
                     cv2.rectangle(vis, (x_min, y_min),
                                   (x_max, y_max), (0, 255, 0), 2)
 
-                    # Draw label
+                    # add label above box
                     label = f"{detection.class_name}: {detection.confidence:.2f}"
                     cv2.putText(
                         vis, label,
@@ -232,21 +182,21 @@ class StreetCleanlinessDetectionSystem:
                         1
                     )
 
-        # Overlay heatmap
+        # overlay heatmap
         if show_heatmap:
             heatmap_overlay = self.spatial_analyzer.generate_heatmap_overlay(
                 vis, alpha=0.5
             )
             vis = heatmap_overlay
 
-        # Draw hotspots
+        # draw hotspot rectangles
         if show_hotspots and results.get("hotspots"):
             vis = self.spatial_analyzer.visualize_hotspots(
                 vis, results["hotspots"],
                 color=(0, 0, 255), thickness=2
             )
 
-        # Add text overlay with scores
+        # show score info as text overlay
         text_lines = [
             f"Scene: {results['scene_class']} ({results['scene_confidence']:.2f})",
             f"Litter Count: {results['litter_count']}",
@@ -275,28 +225,18 @@ class StreetCleanlinessDetectionSystem:
         output_path: Optional[str] = None,
         skip_frames: int = 1
     ) -> Dict:
-        """Process video and generate output
-
-        Args:
-            video_path: Path to video file
-            output_path: Where to save output video (None = no save)
-            skip_frames: Process every nth frame
-
-        Returns:
-            Dictionary with aggregate statistics
-        """
         cap = cv2.VideoCapture(video_path)
 
         if not cap.isOpened():
             raise ValueError(f"Failed to open video: {video_path}")
 
-        # Get video properties
+        # read video properties
         fps = cap.get(cv2.CAP_PROP_FPS)
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-        # Setup video writer if output path provided
+        # setup output writer if needed
         writer = None
         if output_path:
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -307,7 +247,6 @@ class StreetCleanlinessDetectionSystem:
                 (width, height)
             )
 
-        # Process frames
         frame_idx = 0
         all_scores = []
         all_scenes = []
@@ -317,12 +256,12 @@ class StreetCleanlinessDetectionSystem:
             if not ret:
                 break
 
-            # Skip frames
+            # skip frames we dont want to process
             if frame_idx % skip_frames != 0:
                 frame_idx += 1
                 continue
 
-            # Process frame
+            # run detection and scoring per frame
             detections = self.detect_litter(frame)
             scene_class, _, _ = self.classify_scene(frame)
             score = self.context_scorer.compute_context_aware_score(
@@ -332,26 +271,26 @@ class StreetCleanlinessDetectionSystem:
             all_scores.append(score)
             all_scenes.append(scene_class)
 
-            # Visualize
+            # update spatial grid for this frame
             self.spatial_analyzer.create_grid(height, width)
             self.spatial_analyzer.populate_grid(detections)
             hotspots = self.spatial_analyzer.identify_hotspots()
 
             vis = frame.copy()
 
-            # Draw detections
+            # draw detections on frame
             for detection in detections:
                 if detection.confidence >= 0.4:
                     x_min, y_min, x_max, y_max = detection.bbox
                     cv2.rectangle(vis, (x_min, y_min),
                                   (x_max, y_max), (0, 255, 0), 2)
 
-            # Draw heatmap
+            # apply heatmap overlay
             heatmap_vis = self.spatial_analyzer.generate_heatmap_overlay(
                 vis, alpha=0.4
             )
 
-            # Add score info
+            # add score text
             cv2.putText(
                 heatmap_vis,
                 f"Score: {score:.1f}/5.0 | Scene: {scene_class}",
@@ -362,18 +301,18 @@ class StreetCleanlinessDetectionSystem:
                 2
             )
 
-            # Write frame
+            # write frame to output video
             if writer:
                 writer.write(heatmap_vis)
 
             frame_idx += 1
 
-        # Cleanup
+        # release everything
         cap.release()
         if writer:
             writer.release()
 
-        # Compute statistics
+        # aggregate stats for whole video
         return {
             "total_frames": total_frames,
             "processed_frames": len(all_scores),

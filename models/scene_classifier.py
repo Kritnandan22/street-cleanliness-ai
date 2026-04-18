@@ -1,9 +1,3 @@
-"""
-Scene Classification Module
-Classifies image scenes (road, park, street, indoor)
-Uses lightweight MobileNetV2 for efficiency
-"""
-
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
@@ -16,19 +10,18 @@ import pickle
 
 
 class SceneClassifier(nn.Module):
-    """Fine-tuned MobileNetV2 for scene classification"""
 
     def __init__(self, num_classes: int = 4, pretrained: bool = True):
         super(SceneClassifier, self).__init__()
 
-        # Load pretrained MobileNetV2
+        # load mobilenetv2 with imagenet weights
         if pretrained:
             weights = MobileNet_V2_Weights.DEFAULT
             self.backbone = mobilenet_v2(weights=weights)
         else:
             self.backbone = mobilenet_v2(weights=None)
 
-        # Replace final classification layer
+        # swap out final layer for our 4-class head
         in_features = self.backbone.classifier[1].in_features
         self.backbone.classifier = nn.Sequential(
             nn.Dropout(0.2),
@@ -42,12 +35,10 @@ class SceneClassifier(nn.Module):
         self.class_names = ["road", "park", "street", "indoor"][:num_classes]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass"""
         return self.backbone(x)
 
 
 class SceneClassificationPipeline:
-    """End-to-end scene classification pipeline"""
 
     SCENE_CLASSES = {
         0: "road",
@@ -65,13 +56,13 @@ class SceneClassificationPipeline:
         self.device = device
         self.num_classes = num_classes
 
-        # Initialize model
+        # init the model
         self.model = SceneClassifier(
             num_classes=num_classes,
             pretrained=True
         )
 
-        # Load weights if provided
+        # load finetuned weights if given
         if model_path and Path(model_path).exists():
             state_dict = torch.load(model_path, map_location=device)
             self.model.load_state_dict(state_dict)
@@ -79,7 +70,7 @@ class SceneClassificationPipeline:
         self.model.to(device)
         self.model.eval()
 
-        # Image preprocessing transforms
+        # todo: karan fix transform to support higher res input
         self.transform = transforms.Compose([
             transforms.ToPILImage(),
             transforms.Resize((224, 224)),
@@ -94,30 +85,19 @@ class SceneClassificationPipeline:
         self,
         image: np.ndarray
     ) -> Tuple[str, float, Dict[str, float]]:
-        """Predict scene class for an image
-
-        Args:
-            image: Input image (BGR format from OpenCV)
-
-        Returns:
-            (predicted_class, confidence, probabilities_dict)
-        """
-        # Convert BGR to RGB for PyTorch
+        # bgr to rgb
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        # Transform image
+        # preprocess
         x = self.transform(image_rgb).unsqueeze(0).to(self.device)
 
-        # Forward pass
         with torch.no_grad():
             logits = self.model(x)
             probs = torch.nn.functional.softmax(logits, dim=1)
 
-        # Get prediction
         pred_class_id = probs.argmax(dim=1).item()
         confidence = probs[0, pred_class_id].item()
 
-        # Get probability distribution
         prob_dict = {
             self.SCENE_CLASSES.get(i, f"class_{i}"): probs[0, i].item()
             for i in range(self.num_classes)
@@ -128,19 +108,16 @@ class SceneClassificationPipeline:
         return predicted_class, confidence, prob_dict
 
     def save(self, model_path: Path):
-        """Save model weights"""
         Path(model_path).parent.mkdir(parents=True, exist_ok=True)
         torch.save(self.model.state_dict(), model_path)
 
     def to(self, device: str):
-        """Move model to device"""
         self.device = device
         self.model.to(device)
         return self
 
 
 class TrainingUtils:
-    """Utilities for training scene classifier"""
 
     @staticmethod
     def create_train_dataloader(
@@ -150,11 +127,6 @@ class TrainingUtils:
         num_workers: int = 4,
         shuffle: bool = True
     ):
-        """Create training dataloader
-
-        Expected annotation file format:
-        image_path,scene_class
-        """
         from torch.utils.data import DataLoader, Dataset
 
         class SceneDataset(Dataset):
@@ -164,10 +136,7 @@ class TrainingUtils:
                     transforms.ToPILImage(),
                     transforms.Resize((224, 224)),
                     transforms.RandomHorizontalFlip(),
-                    transforms.ColorJitter(
-                        brightness=0.2,
-                        contrast=0.2
-                    ),
+                    transforms.ColorJitter(brightness=0.2, contrast=0.2),
                     transforms.ToTensor(),
                     transforms.Normalize(
                         mean=[0.485, 0.456, 0.406],
@@ -179,7 +148,7 @@ class TrainingUtils:
                     "road": 0, "park": 1, "street": 2, "indoor": 3
                 }
 
-                # Load annotations
+                # load annotations csv
                 self.samples = []
                 with open(annotations_file, 'r') as f:
                     for line in f:
@@ -195,10 +164,8 @@ class TrainingUtils:
                 img_path, class_name = self.samples[idx]
                 img = cv2.imread(str(self.image_dir / img_path))
                 img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
                 img_tensor = self.transform(img_rgb)
                 class_id = self.class_to_id[class_name]
-
                 return img_tensor, class_id
 
         dataset = SceneDataset(image_dir, annotations_file)
@@ -217,7 +184,6 @@ class TrainingUtils:
         criterion,
         device: str
     ) -> float:
-        """Train for one epoch"""
         model.train()
         total_loss = 0.0
 
@@ -225,11 +191,11 @@ class TrainingUtils:
             images = images.to(device)
             labels = labels.to(device)
 
-            # Forward pass
+            # forward
             outputs = model(images)
             loss = criterion(outputs, labels)
 
-            # Backward pass
+            # backward
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -245,7 +211,7 @@ class TrainingUtils:
         criterion,
         device: str
     ) -> Tuple[float, float]:
-        """Evaluate model accuracy"""
+        # todo: mudit fix evaluate to also return per-class accuracy
         model.eval()
         total_loss = 0.0
         correct = 0

@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
-"""
-YOLOv8 Fine-Tuning Script for Street Cleanliness Detection
-Trains on the complete TACO dataset (1500 images, 6 semantic classes)
 
-Usage:
-    python train.py                              # default settings
-    python train.py --epochs 50 --batch 16      # custom settings
-    python train.py --device cuda --epochs 100  # GPU training
-"""
+# todo: krit fix validate_dataset to check label count too
+#todo: karan fix train epochs
 
 import argparse
 import shutil
@@ -21,10 +15,9 @@ RUNS_DIR = PROJECT_ROOT / "runs" / "detect"
 
 
 def validate_dataset(dataset_yaml: Path) -> bool:
-    """Validate that the processed dataset exists and has images."""
     if not dataset_yaml.exists():
-        print(f"[!] Dataset YAML not found: {dataset_yaml}")
-        print("    Run 'python data/prepare_taco_yolo_subset.py' first.")
+        print(f"[!] dataset yaml not found: {dataset_yaml}")
+        print("    run 'python data/prepare_taco_yolo_subset.py' first.")
         return False
 
     with open(dataset_yaml) as f:
@@ -35,17 +28,17 @@ def validate_dataset(dataset_yaml: Path) -> bool:
     val_path = base / cfg.get("val", "images/val")
 
     if not train_path.exists():
-        print(f"[!] Train images directory missing: {train_path}")
+        print(f"[!] train dir missing: {train_path}")
         return False
 
     train_imgs = list(train_path.glob("*.jpg")) + list(train_path.glob("*.JPG")) + list(train_path.glob("*.png"))
     val_imgs = list(val_path.glob("*.jpg")) + list(val_path.glob("*.JPG")) + list(val_path.glob("*.png"))
 
-    print(f"[+] Dataset validated:")
-    print(f"    Train images : {len(train_imgs)}")
-    print(f"    Val   images : {len(val_imgs)}")
-    print(f"    Classes      : {cfg.get('nc', 'unknown')}")
-    print(f"    Class names  : {list(cfg.get('names', {}).values())}")
+    print(f"[+] dataset ok:")
+    print(f"    train images : {len(train_imgs)}")
+    print(f"    val   images : {len(val_imgs)}")
+    print(f"    classes      : {cfg.get('nc', 'unknown')}")
+    print(f"    class names  : {list(cfg.get('names', {}).values())}")
     return True
 
 
@@ -60,62 +53,46 @@ def train(
     resume: bool = False,
     cache: bool = False,
 ):
-    """Run YOLOv8 fine-tuning on the TACO litter dataset.
-
-    Args:
-        epochs    : Number of training epochs
-        batch     : Batch size (reduce if OOM)
-        imgsz     : Training image size (must be multiple of 32)
-        device    : 'cpu' or 'cuda' or '0' for GPU index
-        name      : Experiment name (saved under runs/detect/)
-        patience  : Early stopping patience
-        base_weights: Starting weights (yolov8n/s/m/l/x.pt)
-        resume    : Resume from last checkpoint if True
-        cache     : Cache images in RAM for faster training
-    """
     try:
         from ultralytics import YOLO
     except ImportError:
-        print("[!] ultralytics is not installed.")
-        print("    Install it: pip install ultralytics")
+        print("[!] ultralytics not installed. pip install ultralytics")
         return
 
     print("\n" + "=" * 60)
-    print("STREET CLEANLINESS YOLOV8 TRAINING")
+    print("street cleanliness yolov8 training")
     print("=" * 60)
 
     if not validate_dataset(DATASET_YAML):
         return
 
-    # Load model
+    # pick weights: resume from last checkpoint or start fresh
     if resume:
         last_run = sorted(RUNS_DIR.glob(f"{name}*/weights/last.pt"))
         if last_run:
             weights = str(last_run[-1])
-            print(f"[*] Resuming from: {weights}")
+            print(f"[*] resuming: {weights}")
         else:
-            print("[!] No checkpoint found to resume. Starting fresh.")
+            print("[!] no checkpoint found, starting fresh.")
             weights = base_weights
     else:
         weights = base_weights
-        # Check for local copy downloaded by main.py
         local_weights = PROJECT_ROOT / base_weights
         if local_weights.exists():
             weights = str(local_weights)
 
-    print(f"\n[*] Base weights    : {weights}")
-    print(f"[*] Dataset YAML    : {DATASET_YAML}")
-    print(f"[*] Epochs          : {epochs}")
-    print(f"[*] Batch size      : {batch}")
-    print(f"[*] Image size      : {imgsz}")
-    print(f"[*] Device          : {device}")
-    print(f"[*] Experiment name : {name}")
-    print(f"[*] Early stopping  : patience={patience}")
+    print(f"\n[*] weights     : {weights}")
+    print(f"[*] dataset     : {DATASET_YAML}")
+    print(f"[*] epochs      : {epochs}")
+    print(f"[*] batch       : {batch}")
+    print(f"[*] imgsz       : {imgsz}")
+    print(f"[*] device      : {device}")
+    print(f"[*] name        : {name}")
+    print(f"[*] patience    : {patience}")
     print()
 
     model = YOLO(weights)
 
-    # Train
     results = model.train(
         data=str(DATASET_YAML),
         epochs=epochs,
@@ -126,91 +103,75 @@ def train(
         project=str(RUNS_DIR),
         patience=patience,
         cache=cache,
-        # Augmentation (on top of YOLOv8 defaults)
-        fliplr=0.5,          # horizontal flip
-        hsv_h=0.015,         # hue variation
-        hsv_s=0.7,           # saturation variation
-        hsv_v=0.4,           # brightness variation
-        degrees=10.0,        # rotation ±10°
+        # augmentation params
+        fliplr=0.5,
+        hsv_h=0.015,
+        hsv_s=0.7,
+        hsv_v=0.4,
+        degrees=10.0,
         translate=0.1,
         scale=0.5,
         mosaic=1.0,
         mixup=0.1,
-        # Validation
         val=True,
         plots=True,
         save=True,
-        save_period=10,      # save checkpoint every 10 epochs
+        save_period=10,
         verbose=True,
     )
 
-    # Locate best weights
     best_weights = RUNS_DIR / name / "weights" / "best.pt"
     if not best_weights.exists():
-        # Try numbered variant (ultralytics appends index on re-run)
         candidates = sorted(RUNS_DIR.glob(f"{name}*/weights/best.pt"))
         best_weights = candidates[-1] if candidates else None
 
     print("\n" + "=" * 60)
-    print("TRAINING COMPLETE")
+    print("training complete")
     print("=" * 60)
 
     if best_weights and best_weights.exists():
-        # Copy best weights to models/ for easy reference
         dest = PROJECT_ROOT / "models" / "best_yolov8_taco.pt"
         dest.parent.mkdir(exist_ok=True)
         shutil.copy2(best_weights, dest)
-        print(f"[+] Best weights saved : {best_weights}")
-        print(f"[+] Also copied to     : {dest}")
+        print(f"[+] best weights: {best_weights}")
+        print(f"[+] copied to   : {dest}")
     else:
-        print("[!] Could not locate best.pt — check runs/detect/ manually.")
+        print("[!] best.pt not found — check runs/detect/ manually.")
 
-    # Print metrics
     try:
         metrics = results.results_dict
-        print(f"\n--- Final Metrics ---")
-        print(f"  mAP50     : {metrics.get('metrics/mAP50(B)', 0):.4f}")
-        print(f"  mAP50-95  : {metrics.get('metrics/mAP50-95(B)', 0):.4f}")
-        print(f"  Precision : {metrics.get('metrics/precision(B)', 0):.4f}")
-        print(f"  Recall    : {metrics.get('metrics/recall(B)', 0):.4f}")
+        print(f"\n--- metrics ---")
+        print(f"  map50     : {metrics.get('metrics/mAP50(B)', 0):.4f}")
+        print(f"  map50-95  : {metrics.get('metrics/mAP50-95(B)', 0):.4f}")
+        print(f"  precision : {metrics.get('metrics/precision(B)', 0):.4f}")
+        print(f"  recall    : {metrics.get('metrics/recall(B)', 0):.4f}")
     except Exception:
         pass
 
-    print(f"\n[+] Run output at: {RUNS_DIR / name}")
+    print(f"\n[+] run output: {RUNS_DIR / name}")
     return results
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Train YOLOv8 on the full TACO litter dataset",
+        description="train yolov8 on taco litter dataset",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument("--epochs", type=int, default=50,
-                        help="Number of training epochs")
-    parser.add_argument("--batch", type=int, default=8,
-                        help="Batch size (reduce if OOM; 4 for <4GB RAM)")
-    parser.add_argument("--imgsz", type=int, default=640,
-                        help="Training image size (must be multiple of 32)")
-    parser.add_argument("--device", type=str, default="cpu",
-                        help="Device: 'cpu', 'cuda', or GPU index '0'")
-    parser.add_argument("--name", type=str, default="taco_cleanliness",
-                        help="Experiment name (subdirectory in runs/detect/)")
-    parser.add_argument("--patience", type=int, default=15,
-                        help="Early-stopping patience (0 = disabled)")
-    parser.add_argument("--weights", type=str, default="yolov8n.pt",
-                        help="Base model weights (yolov8n/s/m/l/x.pt)")
-    parser.add_argument("--resume", action="store_true",
-                        help="Resume training from last checkpoint")
-    parser.add_argument("--cache", action="store_true",
-                        help="Cache images in RAM for faster training")
-    parser.add_argument("--prepare-data", action="store_true",
-                        help="Re-run dataset preparation before training")
+    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--batch", type=int, default=8)
+    parser.add_argument("--imgsz", type=int, default=640)
+    parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument("--name", type=str, default="taco_cleanliness")
+    parser.add_argument("--patience", type=int, default=15)
+    parser.add_argument("--weights", type=str, default="yolov8n.pt")
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--cache", action="store_true")
+    parser.add_argument("--prepare-data", action="store_true")
 
     args = parser.parse_args()
 
-    # Optionally re-run dataset preparation
     if args.prepare_data:
-        print("[*] Re-running dataset preparation...")
+        print("[*] re-running dataset prep...")
         import subprocess, sys
         prep_script = PROJECT_ROOT / "data" / "prepare_taco_yolo_subset.py"
         subprocess.run([sys.executable, str(prep_script)], check=True)

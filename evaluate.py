@@ -1,20 +1,4 @@
 #!/usr/bin/env python3
-"""
-Evaluation & Ablation Study for Street Cleanliness Detection System
-
-Runs four scoring modes on the test set and compares them:
-  Mode A — Raw Count         : simply counts detections
-  Mode B — Context-Aware     : normalises count by scene baseline
-  Mode C — Weighted Semantic : weights by litter class importance
-  Mode D — Full Pipeline     : context-aware + semantic weighting (proposed)
-
-Also computes YOLOv8 mAP if trained weights are supplied.
-
-Usage:
-    python evaluate.py                              # ablation on test split
-    python evaluate.py --weights models/best_yolov8_taco.pt --map
-    python evaluate.py --split val --output output/eval_val
-"""
 
 import argparse
 import csv
@@ -31,12 +15,7 @@ DATASET_YAML = PROJECT_ROOT / "data" / "processed" / "taco_yolo_real" / "dataset
 DEFAULT_OUTPUT = PROJECT_ROOT / "output" / "evaluation"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def load_test_images(split_dir: Path, max_images: int = 0) -> List[Path]:
-    """Return sorted list of image paths in a split directory."""
     exts = {".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG"}
     images = [p for p in sorted(split_dir.iterdir()) if p.suffix in exts]
     if max_images > 0:
@@ -45,7 +24,7 @@ def load_test_images(split_dir: Path, max_images: int = 0) -> List[Path]:
 
 
 def load_yolo_labels(label_path: Path, img_w: int, img_h: int) -> List[Dict]:
-    """Load YOLO .txt labels and convert to pixel bboxes."""
+    # convert yolo format to pixel coords
     detections = []
     if not label_path.exists():
         return detections
@@ -64,7 +43,7 @@ def load_yolo_labels(label_path: Path, img_w: int, img_h: int) -> List[Dict]:
             "class_name": _class_name(cls_id),
             "confidence": 1.0,
             "bbox": (x1, y1, x2, y2),
-            "area": w * h,  # normalised area
+            "area": w * h,  # normalized
         })
     return detections
 
@@ -81,34 +60,31 @@ def _class_name(cls_id: int) -> str:
     return CLASS_NAMES[cls_id] if cls_id < len(CLASS_NAMES) else "other"
 
 
-# ---------------------------------------------------------------------------
-# Four scoring modes
-# ---------------------------------------------------------------------------
-
+# mode a: raw count, 0 items = 5.0
 def score_raw_count(detections: List[Dict], **_) -> float:
-    """Mode A: Raw count mapped to 0-5 (higher count → lower score)."""
     count = len(detections)
-    return max(0.0, 5.0 - (count / 4))  # 0 → 5.0; 20+ → ~0
+    return max(0.0, 5.0 - (count / 4))
 
 
+# mode b: normalize count by scene baseline
 def score_context_aware(
     detections: List[Dict],
     scene_class: str = "street",
     **_
 ) -> float:
-    """Mode B: Normalise count by scene-specific baseline."""
     baseline = SCENE_BASELINES.get(scene_class, 12)
     ratio = min(len(detections) / baseline, 2.0)
     return round((1.0 - ratio / 2.0) * 5.0, 3)
 
 
+# todo: krit fix score_weighted_semantic scaling for small objects
 def score_weighted_semantic(
     detections: List[Dict],
     img_w: int = 640,
     img_h: int = 480,
     **_
 ) -> float:
-    """Mode C: Σ(class_weight × bbox_area × confidence), scaled to 0-5."""
+    # sum weight * area * confidence per detection
     total = 0.0
     img_area = img_w * img_h or 1
     for det in detections:
@@ -119,6 +95,7 @@ def score_weighted_semantic(
     return round(max(0.0, 5.0 - total * 100), 3)
 
 
+# mode d: blend context + semantic (our proposed system)
 def score_full_pipeline(
     detections: List[Dict],
     scene_class: str = "street",
@@ -126,17 +103,11 @@ def score_full_pipeline(
     img_h: int = 480,
     **_
 ) -> float:
-    """Mode D: Context-aware + weighted semantic (proposed system)."""
     ctx = score_context_aware(detections, scene_class=scene_class)
     wsem = score_weighted_semantic(detections, img_w=img_w, img_h=img_h)
-    # Combine: context carries scene awareness, semantic carries class severity
     combined = 0.55 * ctx + 0.45 * wsem
     return round(np.clip(combined, 0.0, 5.0), 3)
 
-
-# ---------------------------------------------------------------------------
-# mAP evaluation via ultralytics
-# ---------------------------------------------------------------------------
 
 def run_map_evaluation(
     weights_path: Path,
@@ -146,18 +117,17 @@ def run_map_evaluation(
     device: str = "cpu",
     output_dir: Path = DEFAULT_OUTPUT,
 ) -> Optional[Dict]:
-    """Compute mAP50 and mAP50-95 using YOLOv8's built-in val()."""
     try:
         from ultralytics import YOLO
     except ImportError:
-        print("[!] ultralytics not available — skipping mAP computation.")
+        print("[!] ultralytics not available — skipping map.")
         return None
 
     if not weights_path.exists():
-        print(f"[!] Weights not found: {weights_path} — skipping mAP.")
+        print(f"[!] weights not found: {weights_path}")
         return None
 
-    print(f"\n[*] Computing mAP on split='{split}' ...")
+    print(f"\n[*] computing map on split='{split}' ...")
     model = YOLO(str(weights_path))
     results = model.val(
         data=str(dataset_yaml),
@@ -178,18 +148,15 @@ def run_map_evaluation(
         "recall": round(results.box.mr, 4),
     }
 
-    print(f"  mAP50     : {metrics['mAP50']}")
-    print(f"  mAP50-95  : {metrics['mAP50_95']}")
-    print(f"  Precision : {metrics['precision']}")
-    print(f"  Recall    : {metrics['recall']}")
+    print(f"  map50     : {metrics['mAP50']}")
+    print(f"  map50-95  : {metrics['mAP50_95']}")
+    print(f"  precision : {metrics['precision']}")
+    print(f"  recall    : {metrics['recall']}")
 
     return metrics
 
 
-# ---------------------------------------------------------------------------
-# Ablation study
-# ---------------------------------------------------------------------------
-
+# todo: chayan fix run_ablation to support multi-scene images
 def run_ablation(
     split_dir: Path,
     output_dir: Path,
@@ -199,25 +166,23 @@ def run_ablation(
     yolo_weights: Optional[Path] = None,
     device: str = "cpu",
 ) -> List[Dict]:
-    """Run all four scoring modes on the split images and return per-image rows."""
     images = load_test_images(split_dir, max_images)
     if not images:
-        print(f"[!] No images found in {split_dir}")
+        print(f"[!] no images found in {split_dir}")
         return []
 
     labels_base = split_dir.parent.parent / "labels" / split_dir.name
 
-    print(f"\n[*] Running ablation on {len(images)} images from '{split_dir.name}' split ...")
+    print(f"\n[*] ablation on {len(images)} images from '{split_dir.name}' ...")
 
-    # Optional: use YOLO to generate live detections
     yolo_model = None
     if use_yolo and yolo_weights and yolo_weights.exists():
         try:
             from ultralytics import YOLO
             yolo_model = YOLO(str(yolo_weights))
-            print(f"[*] Using YOLO detections from: {yolo_weights}")
+            print(f"[*] using yolo: {yolo_weights}")
         except Exception as e:
-            print(f"[!] Could not load YOLO model: {e}")
+            print(f"[!] could not load yolo: {e}")
 
     rows = []
     for img_path in images:
@@ -227,7 +192,7 @@ def run_ablation(
         h, w = img.shape[:2]
 
         if yolo_model is not None:
-            # Use live YOLO detections securely bound to the correct device
+            # live yolo detections
             result = yolo_model(img, conf=0.35, device=device, verbose=False)[0]
             detections = []
             for box in result.boxes:
@@ -242,11 +207,11 @@ def run_ablation(
                     "area": ((x2 - x1) * (y2 - y1)) / (w * h),
                 })
         else:
-            # Fall back to ground-truth labels
+            # fallback to gt labels
             label_path = labels_base / (img_path.stem + ".txt")
             detections = load_yolo_labels(label_path, w, h)
 
-        # Compute all four scores
+        # run all 4 scoring modes
         sa = score_raw_count(detections)
         sb = score_context_aware(detections, scene_class=scene_class)
         sc = score_weighted_semantic(detections, img_w=w, img_h=h)
@@ -264,12 +229,11 @@ def run_ablation(
             "delta_D_minus_A": round(sd - sa, 3),
         })
 
-    print(f"[+] Ablation complete — {len(rows)} images processed.")
+    print(f"[+] done — {len(rows)} images processed.")
     return rows
 
 
 def save_ablation_csv(rows: List[Dict], output_dir: Path):
-    """Save ablation results to CSV."""
     output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = output_dir / "ablation_results.csv"
     if not rows:
@@ -279,12 +243,11 @@ def save_ablation_csv(rows: List[Dict], output_dir: Path):
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-    print(f"[+] Ablation CSV saved: {csv_path}")
+    print(f"[+] csv saved: {csv_path}")
     return csv_path
 
 
 def print_ablation_summary(rows: List[Dict]):
-    """Print aggregate comparison table to stdout."""
     if not rows:
         return
     keys = ["mode_A_raw_count", "mode_B_context_aware",
@@ -296,7 +259,7 @@ def print_ablation_summary(rows: List[Dict]):
         "mode_D_full_pipeline": "D: Full Pipeline (Ours)"
     }
     print("\n" + "=" * 60)
-    print("ABLATION STUDY RESULTS (mean ± std over test images)")
+    print("ablation study results (mean ± std over test images)")
     print("=" * 60)
     print(f"{'Mode':<28}  {'Mean':>6}  {'Std':>6}  {'Min':>6}  {'Max':>6}")
     print("-" * 60)
@@ -305,11 +268,10 @@ def print_ablation_summary(rows: List[Dict]):
         print(f"{labels[k]:<28}  {np.mean(vals):6.3f}  {np.std(vals):6.3f}  "
               f"{np.min(vals):6.3f}  {np.max(vals):6.3f}")
     print("=" * 60)
-    print(f"Total images evaluated: {len(rows)}")
+    print(f"total images: {len(rows)}")
 
 
 def save_ablation_chart(rows: List[Dict], output_dir: Path):
-    """Save a bar chart comparing the four scoring modes."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -332,7 +294,7 @@ def save_ablation_chart(rows: List[Dict], output_dir: Path):
     fig.suptitle("Ablation Study: Cleanliness Scoring Modes (0-5 scale)",
                  fontsize=14, fontweight="bold")
 
-    # Bar chart — average scores
+    # bar chart avg scores
     ax = axes[0]
     bars = ax.bar(labels, means, yerr=stds, color=colors,
                   capsize=5, edgecolor="black", linewidth=0.8)
@@ -346,7 +308,7 @@ def save_ablation_chart(rows: List[Dict], output_dir: Path):
                 bar.get_height() + s + 0.05,
                 f"{m:.2f}", ha="center", va="bottom", fontsize=10)
 
-    # Per-image line plot for top 20 images
+    # per-image line for first 30
     ax2 = axes[1]
     n = min(30, len(rows))
     sample = rows[:n]
@@ -354,9 +316,9 @@ def save_ablation_chart(rows: List[Dict], output_dir: Path):
     for k, lbl, col in zip(keys, ["A", "B", "C", "D"], colors):
         ax2.plot(x, [r[k] for r in sample], marker="o", markersize=3,
                  label=lbl, color=col, linewidth=1.5)
-    ax2.set_xlabel("Image Index")
+    ax2.set_xlabel("image index")
     ax2.set_ylabel("Cleanliness Score (0-5)")
-    ax2.set_title(f"Score Comparison (first {n} test images)")
+    ax2.set_title(f"score comparison (first {n} test images)")
     ax2.legend(fontsize=9)
     ax2.set_ylim(0, 5.2)
     ax2.grid(True, alpha=0.3)
@@ -365,7 +327,7 @@ def save_ablation_chart(rows: List[Dict], output_dir: Path):
     chart_path = output_dir / "ablation_chart.png"
     plt.savefig(chart_path, dpi=150, bbox_inches="tight")
     plt.close()
-    print(f"[+] Ablation chart saved: {chart_path}")
+    print(f"[+] chart saved: {chart_path}")
     return chart_path
 
 
@@ -374,7 +336,6 @@ def save_summary_json(
     map_metrics: Optional[Dict],
     output_dir: Path
 ):
-    """Save full evaluation summary as JSON."""
     keys = ["mode_A_raw_count", "mode_B_context_aware",
             "mode_C_weighted_semantic", "mode_D_full_pipeline"]
     summary = {
@@ -401,40 +362,29 @@ def save_summary_json(
     json_path = output_dir / "evaluation_summary.json"
     with open(json_path, "w") as f:
         json.dump(summary, f, indent=2)
-    print(f"[+] Summary JSON saved: {json_path}")
+    print(f"[+] summary json: {json_path}")
     return json_path
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def main():
     parser = argparse.ArgumentParser(
-        description="Evaluate & ablate the Street Cleanliness Detection System",
+        description="evaluate & ablate the street cleanliness system",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--split", default="test",
-                        choices=["train", "val", "test"],
-                        help="Dataset split to evaluate on")
-    parser.add_argument("--output", default=str(DEFAULT_OUTPUT),
-                        help="Directory to save evaluation outputs")
-    parser.add_argument("--weights", default=None,
-                        help="Path to trained YOLOv8 weights (.pt) for live detections")
-    parser.add_argument("--map", action="store_true",
-                        help="Run mAP evaluation with provided --weights")
-    parser.add_argument("--device", default="cpu",
-                        help="Device for YOLOv8 inference")
+                        choices=["train", "val", "test"])
+    parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    parser.add_argument("--weights", default=None)
+    parser.add_argument("--map", action="store_true")
+    parser.add_argument("--device", default="cpu")
     parser.add_argument("--scene", default="street",
-                        choices=["road", "park", "street", "indoor"],
-                        help="Scene class to use for context-aware scoring")
-    parser.add_argument("--max-images", type=int, default=0,
-                        help="Max images to evaluate (0 = all)")
+                        choices=["road", "park", "street", "indoor"])
+    parser.add_argument("--max-images", type=int, default=0)
     parser.add_argument("--imgsz", type=int, default=640)
     args = parser.parse_args()
 
     print("\n" + "=" * 60)
-    print("STREET CLEANLINESS EVALUATION & ABLATION")
+    print("street cleanliness evaluation & ablation")
     print("=" * 60)
 
     output_dir = Path(args.output)
@@ -443,7 +393,6 @@ def main():
     split_dir = (PROJECT_ROOT / "data" / "processed" / "taco_yolo_real"
                  / "images" / args.split)
 
-    # --- mAP evaluation ---
     map_metrics = None
     if args.map and args.weights:
         map_metrics = run_map_evaluation(
@@ -455,10 +404,8 @@ def main():
             output_dir=output_dir,
         )
 
-    # --- mAP-only evaluation if weights provided (but --map not set) ---
     weights_path = Path(args.weights) if args.weights else None
 
-    # --- Ablation study ---
     rows = run_ablation(
         split_dir=split_dir,
         output_dir=output_dir,
@@ -475,7 +422,7 @@ def main():
         save_ablation_chart(rows, output_dir)
         save_summary_json(rows, map_metrics, output_dir)
 
-    print(f"\n[+] All evaluation outputs in: {output_dir}\n")
+    print(f"\n[+] outputs in: {output_dir}\n")
 
 
 if __name__ == "__main__":

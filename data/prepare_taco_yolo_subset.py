@@ -1,8 +1,6 @@
-"""Prepare a real YOLO dataset subset from downloaded TACO images.
+# converts taco coco annotations to yolo format and splits into train/val/test
 
-This script uses only images that are physically present under data/raw/TACO/data,
-converts COCO boxes to YOLO txt labels, and creates train/val/test splits.
-"""
+# todo: chayan fix main to support custom split ratios
 
 from __future__ import annotations
 
@@ -19,7 +17,7 @@ ANNOTATIONS_PATH = TACO_ROOT / "data" / "annotations.json"
 IMAGES_ROOT = TACO_ROOT / "data"
 OUTPUT_ROOT = PROJECT_ROOT / "data" / "processed" / "taco_yolo_real"
 
-# Group fine-grained TACO classes into broader semantic buckets.
+# map fine-grained taco classes into 6 semantic buckets
 CLASS_GROUPS = {
     "plastic": {
         "plastic",
@@ -136,8 +134,7 @@ def main() -> None:
     for split, items in splits.items():
         for img_id, img in items:
             src_img = IMAGES_ROOT / img["file_name"]
-            # To avoid overwriting (since multiple batches might have 000000.jpg),
-            # we prefix the batch directory name into the stem.
+            # prefix batch dir to avoid stem collisions (e.g. 000000.jpg)
             stem = img["file_name"].replace('/', '_').replace('.jpg', '')
             dst_img = OUTPUT_ROOT / "images" / split / f"{stem}.jpg"
             dst_lbl = OUTPUT_ROOT / "labels" / split / f"{stem}.txt"

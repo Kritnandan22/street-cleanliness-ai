@@ -1,95 +1,65 @@
-"""
-Novelty Component 3: Weighted Semantic Scoring
-Assigns importance-based weights to different litter classes
-"""
-
 from typing import Dict, List, Tuple
 import numpy as np
 
 
 class WeightedSemanticScorer:
-    """Compute importance-weighted litter scores
 
-    Key Innovation:
-    Different litter types have different environmental impact:
-    - Plastic: High persistence, toxic (weight=1.0)
-    - Metal: Sharp, hazardous (weight=0.9)
-    - Paper: Quickly degrades (weight=0.7)
-    - Organic: Natural decomposition (weight=0.4)
-
-    Weighted score = Σ(class_weight × bbox_area × confidence)
-    """
-
-    # Default semantic importance weights
-    # Based on environmental impact, persistence, and hazard level
+    # weights based on how bad each type of litter is for environment
     DEFAULT_WEIGHTS = {
-        "plastic": 1.0,      # Most persistent, toxic to environment
+        "plastic": 1.0,      # plastic is worst, takes 450 years to decompose
         "plastic bag": 1.0,
         "plastic bottle": 1.0,
         "plastic cup": 0.95,
-        "styrofoam": 0.9,    # Not biodegradable
-        "metal": 0.9,        # Sharp, hazardous
+        "styrofoam": 0.9,    # doesnt degrade at all
+        "metal": 0.9,        # sharp edges, hazardous
         "metal can": 0.85,
         "metal container": 0.9,
-        "glass": 0.95,       # Sharp, hazardous
+        "glass": 0.95,       # sharp, dangerous for people and animals
         "glass bottle": 0.95,
-        "foam": 0.85,        # Not biodegradable
-        "rubber": 0.8,       # Persistent but less toxic
+        "foam": 0.85,        # not biodegradable
+        "rubber": 0.8,       # persist long time but less toxic
         "tire": 0.8,
-        "paper": 0.7,        # Biodegradable but messy
+        "paper": 0.7,        # biodegradable but still mess
         "cardboard": 0.65,
         "newspaper": 0.6,
-        "wood": 0.5,         # Natural material, biodegradable
-        "organic": 0.4,      # Decomposes naturally
+        "wood": 0.5,         # natural, degrades ok
+        "organic": 0.4,      # decomposes fast so less bad
         "food": 0.35,
-        "leaf": 0.2,         # Natural litter
-        "textile": 0.6,      # Synthetic or natural
+        "leaf": 0.2,         # its just a leaf, no problem
+        "textile": 0.6,      # synthetic or natural mix
         "cloth": 0.6,
-        "cigarette": 0.3,    # Small but numerous
+        "cigarette": 0.3,    # small but toxic chemicals inside
         "cigarette butt": 0.25,
-        "straw": 0.3,        # Small plastic item
+        "straw": 0.3,        # small plastic item
         "bottle cap": 0.4,
-        "unknown": 0.6       # Default for unclassified
+        "unknown": 0.6       # default when we dont know class
     }
 
     WEIGHT_CATEGORIES = {
-        "critical": (0.85, 1.0),      # Plastic, glass, metal
-        "high": (0.6, 0.85),          # Foam, rubber, paper
-        "medium": (0.3, 0.6),         # Textiles, small items
-        "low": (0.0, 0.3)             # Natural, small organic items
+        "critical": (0.85, 1.0),      # plastic, glass, metal
+        "high": (0.6, 0.85),          # foam, rubber, paper
+        "medium": (0.3, 0.6),         # textiles, small items
+        "low": (0.0, 0.3)             # natural stuff, small organic
     }
 
     def __init__(self, custom_weights: Dict[str, float] = None):
-        """Initialize scorer with optional custom weights
-
-        Args:
-            custom_weights: Dictionary mapping class names to weights [0, 1]
-        """
         self.weights = self.DEFAULT_WEIGHTS.copy()
         if custom_weights:
             self.weights.update(custom_weights)
 
     def get_weight(self, class_name: str) -> float:
-        """Get weight for a class (case-insensitive)
-
-        Args:
-            class_name: Name of litter class
-
-        Returns:
-            Weight value [0, 1]
-        """
         class_key = class_name.lower().strip()
 
-        # Try exact match first
+        # try exact match first
         if class_key in self.weights:
             return self.weights[class_key]
 
-        # Try substring matching for common variations
+        # try partial match for variations like "plastic_bottle"
         for key, weight in self.weights.items():
             if key in class_key or class_key in key:
                 return weight
 
-        # Default weight
+        # fallback to unknown weight
         return self.weights.get("unknown", 0.6)
 
     def compute_weighted_score(
@@ -99,42 +69,22 @@ class WeightedSemanticScorer:
         image_height: int,
         confidence_threshold: float = 0.15
     ) -> float:
-        """Compute overall weighted litter score
-
-        Algorithm:
-        weighted_score = Σ(weight(class) × normalized_area × confidence)
-
-        Where:
-        - weight(class): Importance of litter type [0, 1]
-        - normalized_area: Bbox area / image area [0, 1]
-        - confidence: Detection confidence [0, 1]
-
-        Args:
-            detections: List of Detection objects
-            image_width: Image width in pixels
-            image_height: Image height in pixels
-            confidence_threshold: Minimum confidence to include
-
-        Returns:
-            Weighted score [0, max_possible_score]
-        """
         image_area = image_width * image_height
         total_weighted_score = 0.0
 
         for detection in detections:
-            # Skip low-confidence detections
+            # skip low confidence detections
             if detection.confidence < confidence_threshold:
                 continue
 
-            # Get weight for class
             class_weight = self.get_weight(detection.class_name)
 
-            # Compute normalized bounding box area
+            # compute what fraction of image the bbox covers
             x_min, y_min, x_max, y_max = detection.bbox
             bbox_area = (x_max - x_min) * (y_max - y_min)
             normalized_area = bbox_area / image_area if image_area > 0 else 0
 
-            # Compute weighted contribution
+            # multiply weight by area and confidence
             contribution = class_weight * normalized_area * detection.confidence
             total_weighted_score += contribution
 
@@ -147,11 +97,6 @@ class WeightedSemanticScorer:
         image_height: int,
         confidence_threshold: float = 0.15
     ) -> Dict[str, Dict]:
-        """Compute weighted score breakdown by class
-
-        Returns:
-            Dict: {class_name: {count, weight, total_score, avg_area, avg_confidence}}
-        """
         image_area = image_width * image_height
         class_scores = {}
 
@@ -169,7 +114,6 @@ class WeightedSemanticScorer:
                     "total_weighted_score": 0.0
                 }
 
-            # Update stats
             class_stats = class_scores[class_name]
             class_stats["count"] += 1
 
@@ -184,7 +128,7 @@ class WeightedSemanticScorer:
                 normalized_area * detection.confidence
             class_stats["total_weighted_score"] += contribution
 
-        # Compute averages
+        # compute averages for each class
         for class_name, stats in class_scores.items():
             if stats["count"] > 0:
                 stats["avg_area"] = stats["total_area"] / stats["count"]
@@ -203,34 +147,13 @@ class WeightedSemanticScorer:
         image_height: int,
         confidence_threshold: float = 0.15
     ) -> float:
-        """Compute importance-normalized score (0-5 scale)
-
-        Scales weighted score to human-readable 0-5 range
-
-        Args:
-            detections: List of Detection objects
-            image_width: Image width
-            image_height: Image height
-            confidence_threshold: Minimum confidence threshold
-
-        Returns:
-            Score on 0-5 scale where higher score = more problematic
-        """
+        # call the main weighted score first
         weighted_score = self.compute_weighted_score(
             detections, image_width, image_height, confidence_threshold
         )
 
-        # Map normalized weighted score to 0-5 scale.
-        # The old formula (weighted_score * 5) assumed litter fills ~100% of
-        # the image, which makes real-world small items round to 0.0.
-        #
-        # New approach: each detection contributes up to (class_weight * confidence)
-        # points on a per-item basis, area is used as a mild amplifier rather than
-        # a primary factor. Reference: 1 high-impact item confidently detected →
-        # score ≈ 1.5–2.0; 5 items → approaches 5.0.
-        #
-        # Formula: Σ(class_weight × confidence × (1 + 10 × normalized_area))
-        # This gives ~0.6–1.0 per small item and caps naturally at 5.
+        # old formula was weighted_score * 5 but that gives 0 for small items
+        # new way: per item score with area amplifier so small litter still register
         image_area = image_width * image_height
         per_item_score = 0.0
         for d in detections:
@@ -240,7 +163,7 @@ class WeightedSemanticScorer:
             x_min, y_min, x_max, y_max = d.bbox
             bbox_area = (x_max - x_min) * (y_max - y_min)
             norm_area = bbox_area / image_area if image_area > 0 else 0
-            # area amplifier: small item → ×1.0 baseline, large item → up to ×11
+            # area amplifier: bigger item get more penalty, small item atleast 1x
             area_amp = 1.0 + 10.0 * norm_area
             per_item_score += w * d.confidence * area_amp
 
@@ -248,7 +171,6 @@ class WeightedSemanticScorer:
         return scaled_score
 
     def get_weight_category(self, class_name: str) -> str:
-        """Get importance category for a class"""
         weight = self.get_weight(class_name)
 
         for category, (min_w, max_w) in self.WEIGHT_CATEGORIES.items():
@@ -265,11 +187,6 @@ class WeightedSemanticScorer:
         scene_class: str = "street",
         confidence_threshold: float = 0.15
     ) -> Dict:
-        """Generate comprehensive weighted scoring report
-
-        Returns:
-            Dictionary with detailed scoring breakdown
-        """
         total_weighted = self.compute_weighted_score(
             detections, image_width, image_height, confidence_threshold
         )
@@ -280,14 +197,14 @@ class WeightedSemanticScorer:
             detections, image_width, image_height, confidence_threshold
         )
 
-        # Rank classes by weighted score
+        # sort classes by score, worst first
         ranked_classes = sorted(
             per_class.items(),
             key=lambda x: x[1]["total_weighted_score"],
             reverse=True
         )
 
-        # Top problematic classes
+        # top 5 worst classes
         top_classes = [
             {
                 "class": name,
@@ -322,13 +239,7 @@ class WeightedSemanticScorer:
         }
 
     def update_weights(self, new_weights: Dict[str, float]):
-        """Update semantic weights (e.g., for fine-tuning)
-
-        Args:
-            new_weights: Dictionary of class_name -> weight pairs
-        """
         self.weights.update(new_weights)
 
     def get_all_weights(self) -> Dict[str, float]:
-        """Get all current weights"""
         return self.weights.copy()

@@ -1,1 +1,2 @@
-"""Street Cleanliness Detection System - Data processing module"""
+# data package
+

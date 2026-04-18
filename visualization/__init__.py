@@ -1,4 +1,5 @@
-"""Visualization module for Street Cleanliness Detection System."""
+# visualization package
+
 
 from visualization.visualizer import (
     draw_detections,

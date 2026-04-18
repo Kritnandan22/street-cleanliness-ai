@@ -1,1 +1,2 @@
-"""Street Cleanliness Detection System - Utilities module"""
+# utils package
+
